@@ -1,6 +1,6 @@
 using System;
 
-namespace maestro.api
+namespace Maestro.api
 {
     public class WeatherForecast
     {

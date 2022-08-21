@@ -1,6 +1,6 @@
 ﻿using Microsoft.Extensions.Logging;
 
-namespace maestro.api.Extensions
+namespace Maestro.api.Extensions
 {
     public static class LoggerExtension
     {

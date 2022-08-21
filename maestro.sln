@@ -1,9 +1,9 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.1.32407.343
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.31410.357
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "maestro.api", "maestro.api\maestro.api.csproj", "{6C0D9C8B-7A16-4331-B511-A2C05CEF5EBD}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Maestro.api", "maestro.api\Maestro.api.csproj", "{6C0D9C8B-7A16-4331-B511-A2C05CEF5EBD}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
