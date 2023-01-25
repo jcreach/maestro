@@ -14,19 +14,27 @@ namespace Maestro.api.Managers
         private readonly IConnectionMultiplexer redisClient;
         private readonly IDatabase db;
         private long applicationListLength;
+        private readonly KeysManager keysManager;
 
-        public RedisManager(IConnectionMultiplexer redisClient, ILogger<RedisManager> logger)
+        public RedisManager(IConnectionMultiplexer redisClient, ILogger<RedisManager> logger, KeysManager keysManager)
         {
             this.redisClient = redisClient;
             db = this.redisClient.GetDatabase();
             this.logger = logger;
+            this.keysManager = keysManager;
         }
 
+        /// <summary>
+        /// Check if Maestro is currently availlable
+        /// </summary>
+        /// <returns>The observed latency or empty if not availlable</returns>
         public string Ping()
         {
             try
             {
-                return db.Ping().ToString();
+                var latency = db.Ping().ToString();
+                this.logger.Debug($"Redis ping {latency}");
+                return latency;
             }
             catch (Exception ex)
             {
@@ -35,7 +43,71 @@ namespace Maestro.api.Managers
             }
         }
 
-        public async Task<bool> RegisterApplication(ApplicationInformations applicationInformations)
+        /// <summary>
+        /// Check if the key exist
+        /// </summary>
+        /// <param name="key">Redis key</param>
+        /// <returns>true or false</returns>
+        public async Task<bool> ExistAsync(string key)
+            => await db.KeyExistsAsync(key);
+
+        /// <summary>
+        /// Return the application information for the specified key
+        /// </summary>
+        /// <param name="applicationKey">application key</param>
+        /// <returns>application information for the specified key or null</returns>
+        public async Task<ApplicationInformationsExtended?> GetApplicationInformationsAsync(string applicationKey)
+        {
+            try
+            {
+                string? resultApplicationInformation = await db.StringGetAsync(applicationKey);
+
+                if (string.IsNullOrWhiteSpace(resultApplicationInformation))
+                    return null;
+
+                return JsonSerializer.Deserialize<ApplicationInformationsExtended>(resultApplicationInformation);
+            }
+            catch (Exception ex)
+            {
+                this.logger.Error(ex.Message);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Return the configuration for the specified application
+        /// </summary>
+        /// <param name="applicationKey">application key</param>
+        /// <returns>configuration for the specified application</returns>
+        public async Task<string> GetConfigurationAsync(string applicationKey)
+        {
+            try
+            {
+                if (!await ExistAsync(applicationKey))
+                    return string.Empty;
+
+                var application = await GetApplicationInformationsAsync(applicationKey);
+
+                if (application is null || !await ExistAsync(application.ConfigurationKey))
+                    return string.Empty;
+
+                string? result = await db.StringGetAsync(application.ConfigurationKey);
+
+                return result ?? string.Empty;
+            }
+            catch (Exception ex)
+            {
+                this.logger.Error(ex.Message);
+                return string.Empty;
+            }
+        }
+
+        /// <summary>
+        /// Register an application
+        /// </summary>
+        /// <param name="applicationInformations">Application name, version, etc...</param>
+        /// <returns>true if the application if properly registered else false</returns>
+        public async Task<bool> RegisterApplicationAsync(ApplicationInformations applicationInformations)
         {
             try
             {
@@ -48,32 +120,51 @@ namespace Maestro.api.Managers
 
                 return result && isPushSuccess;
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 this.logger.Error(ex.Message);
                 return false;
             }
         }
 
-        public async Task<ApplicationInformationsExtended?> GetApplicationInformations(string applicationKey)
+        /// <summary>
+        /// Store the configuration for the specified application
+        /// </summary>
+        /// <param name="applicationKey">application key</param>
+        /// <param name="configuration">configuration to store</param>
+        /// <returns>true if the configuration if properly stored else false</returns>
+        public async Task<bool> StoreConfigurationAsync(string applicationKey, string configuration)
         {
+            if (!await ExistAsync(applicationKey))
+                return false;
+
             try
             {
-                var resultApplicationInformation = await db.StringGetAsync(applicationKey);
+                string? applicationValue = await db.StringGetAsync(applicationKey);
 
-                var stringConfig = string.Empty;
-                if (resultApplicationInformation.HasValue)
-                    stringConfig = (string?)resultApplicationInformation;
+                if (string.IsNullOrWhiteSpace(applicationValue))
+                    return false;
 
-                if (string.IsNullOrWhiteSpace(stringConfig))
-                    return null;
+                var application = JsonSerializer.Deserialize<ApplicationInformationsExtended>(applicationValue);
 
-                return JsonSerializer.Deserialize<ApplicationInformationsExtended>(stringConfig);
+                if (application is null)
+                    return false;
+
+                if (string.IsNullOrWhiteSpace(application.ConfigurationKey))
+                {
+                    application.ConfigurationKey = this.keysManager.GenerateConfigurationKey();
+                    applicationValue = await db.StringSetAndGetAsync(applicationKey, JsonSerializer.Serialize(application));
+
+                    if (!string.IsNullOrWhiteSpace(applicationValue))
+                        application = JsonSerializer.Deserialize<ApplicationInformationsExtended>(applicationValue);
+                }
+
+                return await db.StringSetAsync(application?.ConfigurationKey, configuration);
             }
-            catch (Exception ex)
+            catch(Exception ex)
             {
                 this.logger.Error(ex.Message);
-                return null;
+                return false;
             }
         }
     }
